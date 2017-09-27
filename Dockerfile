@@ -1,7 +1,4 @@
 FROM python:2-alpine
-
-ADD . .
-
+ADD . /usr/src/app
 RUN pip install requests
-
-ENTRYPOINT ["scripts/entrypoint.py"]
+ENTRYPOINT ["python", "/usr/src/app/entrypoint.py"]
