@@ -1,0 +1,14 @@
+workspace:
+  base: /go
+  path: src/github.com/quintoandar/drone-marathon
+
+pipeline:
+  test:
+    image: golang:1.9
+    commands:
+      - go vet
+      - go test -cover -coverprofile=coverage.out
+
+  build:
+    image: golang:1.9
+    commands: CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o drone-marathon .
