@@ -74,7 +74,6 @@ func (p *Plugin) Exec() error {
 		return err
 	}
 
-	fmt.Println(string(buff.Bytes()))
 	log.Info("sending data to marathon server")
 
 	u, err := url.Parse(p.Server)
