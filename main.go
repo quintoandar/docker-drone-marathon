@@ -17,7 +17,7 @@ func main() {
 		cli.StringFlag{
 			Name:   "server",
 			Usage:  "dcos server",
-			Value:  "http://marathon.mesos:8080",
+			Value:  "http://master.mesos:8080",
 			EnvVar: "PLUGIN_SERVER",
 		},
 		cli.StringFlag{

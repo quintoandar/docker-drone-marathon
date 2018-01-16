@@ -16,7 +16,7 @@ Execute from the working directory:
 
 ```
 docker run --rm \
-  -e PLUGIN_SERVER=http://marathon.mesos:8080 \
+  -e PLUGIN_SERVER=http://master.mesos:8080 \
   -e PLUGIN_MARATHONFILE=marathon.yaml \
   -v $(pwd):$(pwd) \
   -w $(pwd) \
