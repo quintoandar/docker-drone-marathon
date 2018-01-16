@@ -44,7 +44,7 @@ func (p *Plugin) Exec() error {
 	if err != nil {
 		log.WithFields(log.Fields{
 			"err": err,
-		}).Error("failed to parse input data into JSON format")
+		}).Error("failed to parse input data into JSON format: ", string(b))
 		return err
 	}
 
@@ -53,7 +53,7 @@ func (p *Plugin) Exec() error {
 	if err := json.Unmarshal(b, &v); err != nil {
 		log.WithFields(log.Fields{
 			"err": err,
-		}).Error("failed to unmarshal marathonfile")
+		}).Error("failed to unmarshal marathonfile: ", string(b))
 		return err
 	}
 
@@ -61,7 +61,7 @@ func (p *Plugin) Exec() error {
 		err := errors.New("invalid data")
 		log.WithFields(log.Fields{
 			"err": err,
-		}).Error("marathonfile is missing 'id' key")
+		}).Errorln("marathonfile is missing 'id' key: ", string(b))
 		return err
 	}
 
@@ -70,7 +70,7 @@ func (p *Plugin) Exec() error {
 	if err := json.Indent(&buff, b, "", "\t"); err != nil {
 		log.WithFields(log.Fields{
 			"err": err,
-		}).Error("failed to parse JSON")
+		}).Error("failed to parse JSON: ", string(b))
 		return err
 	}
 
@@ -145,7 +145,7 @@ func (p Plugin) ReadInput() (data string, err error) {
 	if p.AppConfig != "" {
 		log.Warn("app_config is deprecated and will be removed, please use a marathonfile instead")
 
-		return envsubst.EvalEnv(string(data))
+		return envsubst.EvalEnv(p.AppConfig)
 	}
 
 	err = errors.New("missing parameters")
