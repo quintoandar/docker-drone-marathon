@@ -67,6 +67,9 @@ func (p *Plugin) Exec() error {
 		return err
 	}
 
+	app.Container.Docker.AddParameter("log-driver", "json-file")
+	app.Container.Docker.AddParameter("log-opt", "max-size=512m")
+
 	if _, err := client.Application(app.ID); err != nil {
 		log.Infof("failed to get application %s (%s)", app.ID, err)
 		log.Infof("creating application %s", app.ID)
