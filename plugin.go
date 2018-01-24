@@ -1,16 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
-	"net/http"
-	"net/url"
 
 	"github.com/drone/envsubst"
 	"github.com/ghodss/yaml"
+
+	marathon "github.com/gambol99/go-marathon"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -48,80 +46,41 @@ func (p *Plugin) Exec() error {
 		return err
 	}
 
-	var v map[string]interface{}
+	config := marathon.NewDefaultConfig()
+	config.URL = p.Server
 
-	if err := json.Unmarshal(b, &v); err != nil {
+	client, err := marathon.NewClient(config)
+
+	if err != nil {
+		log.Errorf("failed to create a client for marathon: %s", err)
+		return err
+	}
+
+	var app marathon.Application
+
+	log.Infof("searching cluster for app %s", app.ID)
+
+	if err := app.UnmarshalJSON(b); err != nil {
 		log.WithFields(log.Fields{
 			"err": err,
 		}).Error("failed to unmarshal marathonfile: ", string(b))
 		return err
 	}
 
-	if _, ok := v["id"]; !ok {
-		err := errors.New("invalid data")
-		log.WithFields(log.Fields{
-			"err": err,
-		}).Errorln("marathonfile is missing 'id' key: ", string(b))
-		return err
-	}
+	if _, err := client.Application(app.ID); err != nil {
+		log.Infof("failed to get application %s (%s)", app.ID, err)
+		log.Infof("creating application %s", app.ID)
 
-	var buff bytes.Buffer
-
-	if err := json.Indent(&buff, b, "", "\t"); err != nil {
-		log.WithFields(log.Fields{
-			"err": err,
-		}).Error("failed to parse JSON: ", string(b))
-		return err
-	}
-
-	log.Info("sending data to marathon server")
-
-	u, err := url.Parse(p.Server)
-
-	if err != nil {
-		log.WithFields(log.Fields{
-			"err": err,
-		}).Error("failed to parser marathon url")
-		return err
-	}
-
-	u.Path = fmt.Sprintf("/v2/apps/%s", v["id"])
-	u.RawQuery = "force=true"
-
-	log.Infoln("PUT", u.String())
-
-	req, err := http.NewRequest(http.MethodPut, u.String(), &buff)
-
-	if err != nil {
-		log.WithFields(log.Fields{
-			"err": err,
-		}).Error("error creating request")
-		return err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-
-	if err != nil {
-		log.WithFields(log.Fields{
-			"err": err,
-		}).Error("error creating request")
-		return err
-	}
-
-	if resp.StatusCode >= 300 {
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-
-		if err == nil {
-			err = errors.New(string(body))
+		if _, err := client.CreateApplication(&app); err != nil {
+			log.Errorf("failed to create application %s (%s)", app.ID, err)
+			return err
 		}
-
-		log.WithFields(log.Fields{
-			"status": resp.Status,
-			"err":    err,
-		}).Error("error updating application")
-		return err
+	} else {
+		log.Infof("updating application %s", app.ID)
+		if _, err := client.UpdateApplication(&app, true); err != nil {
+			log.Errorf("failed to update application %s (%s)", app.ID, err)
+			return err
+		}
 	}
 
 	return nil

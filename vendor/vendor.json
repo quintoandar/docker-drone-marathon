@@ -9,6 +9,12 @@
 			"revisionTime": "2017-07-28T07:42:14Z"
 		},
 		{
+			"checksumSHA1": "UWjHgYoKbTsUFpixiYMLenzX5+M=",
+			"path": "github.com/donovanhide/eventsource",
+			"revision": "b8f31a59085e69dd2678cf51840db2ac625cb741",
+			"revisionTime": "2017-06-30T08:42:16Z"
+		},
+		{
 			"checksumSHA1": "Jcl7kkf8UdqMh5AL79ndOwp6t4A=",
 			"path": "github.com/drone/envsubst",
 			"revision": "f4d1a8ef8670afc9eea1fb95ee09a979fd2763a3",
@@ -21,10 +27,22 @@
 			"revisionTime": "2017-10-16T18:40:23Z"
 		},
 		{
+			"checksumSHA1": "76D9RQiU+FVJCexfv/idRaNd2UQ=",
+			"path": "github.com/gambol99/go-marathon",
+			"revision": "ec4a50170df729be7380d2797177dea832f41013",
+			"revisionTime": "2017-09-22T09:33:20Z"
+		},
+		{
 			"checksumSHA1": "ImX1uv6O09ggFeBPUJJ2nu7MPSA=",
 			"path": "github.com/ghodss/yaml",
 			"revision": "0ca9ea5df5451ffdf184b4428c902747c2c11cd7",
 			"revisionTime": "2017-03-27T23:54:44Z"
+		},
+		{
+			"checksumSHA1": "p3IB18uJRs4dL2K5yx24MrLYE9A=",
+			"path": "github.com/google/go-querystring/query",
+			"revision": "53e6ce116135b80d037921a7fdd5138cf32d7a8a",
+			"revisionTime": "2017-01-11T10:11:55Z"
 		},
 		{
 			"checksumSHA1": "uGalSICR4r7354vvKuNnh7Y/R/4=",
