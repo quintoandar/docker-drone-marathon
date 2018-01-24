@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"time"
 
 	"github.com/drone/envsubst"
 	"github.com/ghodss/yaml"
@@ -18,6 +19,7 @@ type Plugin struct {
 	Server       string
 	Marathonfile string
 	AppConfig    string
+	Timeout      time.Duration
 }
 
 // Exec runs the plugin
@@ -26,6 +28,7 @@ func (p *Plugin) Exec() error {
 	log.WithFields(log.Fields{
 		"server":       p.Server,
 		"marathonfile": p.Marathonfile,
+		"timeout":      p.Timeout,
 	}).Info("attempting to start job")
 
 	data, err := p.ReadInput()
@@ -52,13 +55,15 @@ func (p *Plugin) Exec() error {
 	client, err := marathon.NewClient(config)
 
 	if err != nil {
-		log.Errorf("failed to create a client for marathon: %s", err)
+		log.WithFields(log.Fields{
+			"err": err,
+		}).Error("failed to create a client for marathon")
 		return err
 	}
 
 	var app marathon.Application
 
-	log.Infof("searching cluster for app %s", app.ID)
+	log.Infof("searching cluster for application")
 
 	if err := app.UnmarshalJSON(b); err != nil {
 		log.WithFields(log.Fields{
@@ -70,18 +75,38 @@ func (p *Plugin) Exec() error {
 	app.Container.Docker.AddParameter("log-driver", "json-file")
 	app.Container.Docker.AddParameter("log-opt", "max-size=512m")
 
-	if _, err := client.Application(app.ID); err != nil {
+	if _, err = client.Application(app.ID); err != nil {
 		log.Infof("failed to get application %s (%s)", app.ID, err)
 		log.Infof("creating application %s", app.ID)
 
-		if _, err := client.CreateApplication(&app); err != nil {
-			log.Errorf("failed to create application %s (%s)", app.ID, err)
+		if _, err = client.CreateApplication(&app); err != nil {
+			log.WithFields(log.Fields{
+				"err": err,
+				"app": app.ID,
+			})
+			log.Errorf("failed to create application")
 			return err
 		}
 	} else {
 		log.Infof("updating application %s", app.ID)
-		if _, err := client.UpdateApplication(&app, true); err != nil {
-			log.Errorf("failed to update application %s (%s)", app.ID, err)
+		dep, err := client.UpdateApplication(&app, true)
+
+		if err != nil {
+			log.WithFields(log.Fields{
+				"err": err,
+				"app": app.ID,
+			})
+			log.Errorf("failed to update application")
+			return err
+		}
+
+		if err := client.WaitOnDeployment(dep.DeploymentID, p.Timeout); err != nil {
+			log.WithFields(log.Fields{
+				"err":        err,
+				"app":        app.ID,
+				"deployment": dep.DeploymentID,
+			})
+			log.Errorf("failed to deploy application")
 			return err
 		}
 	}
