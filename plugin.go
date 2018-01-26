@@ -64,7 +64,7 @@ func (p *Plugin) Exec() error {
 
 	var app marathon.Application
 
-	log.Infof("searching cluster for application")
+	log.Infof("searching Marathon clusters")
 
 	if err := app.UnmarshalJSON(b); err != nil {
 		log.WithFields(log.Fields{
@@ -77,40 +77,65 @@ func (p *Plugin) Exec() error {
 	app.Container.Docker.AddParameter("log-opt", "max-size=512m")
 
 	if _, err = client.Application(app.ID); err != nil {
-		log.Infof("failed to get application %s (%s)", app.ID, err)
-		log.Infof("creating application %s", app.ID)
+		log.WithFields(log.Fields{
+			"err": err,
+			"app": app.ID,
+		}).Info("failed to get application")
 
-		if _, err = client.CreateApplication(&app); err != nil {
+		log.WithFields(log.Fields{
+			"app": app.ID,
+		}).Info("creating application")
+
+		// this should return a deploymetn!
+		newApp, err := client.CreateApplication(&app)
+
+		if err != nil {
 			log.WithFields(log.Fields{
 				"err": err,
 				"app": app.ID,
-			})
-			log.Errorf("failed to create application")
+			}).Errorf("failed to create application")
 			return err
 		}
+
+		log.WithFields(log.Fields{
+			"app":         newApp.ID,
+			"deployments": newApp.Deployments,
+		}).Info("deploying application")
+
 	} else {
-		log.Infof("updating application %s", app.ID)
+		log.WithFields(log.Fields{
+			"app": app.ID,
+		}).Info("updating application")
+
 		dep, err := client.UpdateApplication(&app, true)
 
 		if err != nil {
 			log.WithFields(log.Fields{
 				"err": err,
 				"app": app.ID,
-			})
-			log.Errorf("failed to update application")
+			}).Error("failed to update application")
 			return err
 		}
+
+		log.WithFields(log.Fields{
+			"app":        app.ID,
+			"deployment": dep.DeploymentID,
+			"timeout":    p.Timeout,
+		}).Info("deploying application")
 
 		if err := client.WaitOnDeployment(dep.DeploymentID, p.Timeout); err != nil {
 			log.WithFields(log.Fields{
 				"err":        err,
 				"app":        app.ID,
 				"deployment": dep.DeploymentID,
-			})
-			log.Errorf("failed to deploy application")
+			}).Error("failed to deploy application")
 			return err
 		}
 	}
+
+	log.WithFields(log.Fields{
+		"app": app.ID,
+	}).Info("application deployed successfully")
 
 	return nil
 }
@@ -118,7 +143,9 @@ func (p *Plugin) Exec() error {
 // ReadInput reads Marathonfile/Appconfig data
 func (p Plugin) ReadInput() (data string, err error) {
 	if p.Marathonfile != "" {
-		log.Info("parsing marathonfile ", p.Marathonfile)
+		log.WithFields(log.Fields{
+			"file": p.Marathonfile,
+		}).Info("parsing marathonfile")
 
 		// When 0.9 comes out, limit to secrets and other Drone variables
 		b, err := ioutil.ReadFile(p.Marathonfile)
@@ -131,7 +158,7 @@ func (p Plugin) ReadInput() (data string, err error) {
 	}
 
 	if p.AppConfig != "" {
-		log.Warn("app_config is deprecated and will be removed, please use a marathonfile instead")
+		log.Warn("app_config is deprecated, please use a marathonfile instead")
 
 		return envsubst.EvalEnv(p.AppConfig)
 	}
