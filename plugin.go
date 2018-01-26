@@ -1,16 +1,15 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
-	"net/http"
-	"net/url"
+	"time"
 
 	"github.com/drone/envsubst"
 	"github.com/ghodss/yaml"
+
+	marathon "github.com/gambol99/go-marathon"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -20,6 +19,7 @@ type Plugin struct {
 	Server       string
 	Marathonfile string
 	AppConfig    string
+	Timeout      time.Duration
 }
 
 // Exec runs the plugin
@@ -28,6 +28,7 @@ func (p *Plugin) Exec() error {
 	log.WithFields(log.Fields{
 		"server":       p.Server,
 		"marathonfile": p.Marathonfile,
+		"timeout":      p.Timeout,
 	}).Info("attempting to start job")
 
 	data, err := p.ReadInput()
@@ -43,86 +44,70 @@ func (p *Plugin) Exec() error {
 
 	if err != nil {
 		log.WithFields(log.Fields{
-			"err": err,
-		}).Error("failed to parse input data into JSON format: ", string(b))
+			"err":  err,
+			"data": string(b),
+		}).Errorf("failed to parse input data into JSON format")
 		return err
 	}
 
-	var v map[string]interface{}
+	config := marathon.NewDefaultConfig()
+	config.URL = p.Server
 
-	if err := json.Unmarshal(b, &v); err != nil {
+	client, err := marathon.NewClient(config)
+
+	if err != nil {
+		log.WithFields(log.Fields{
+			"err": err,
+		}).Error("failed to create a client for marathon")
+		return err
+	}
+
+	var app marathon.Application
+
+	log.Infof("searching Marathon clusters")
+
+	if err := app.UnmarshalJSON(b); err != nil {
 		log.WithFields(log.Fields{
 			"err": err,
 		}).Error("failed to unmarshal marathonfile: ", string(b))
 		return err
 	}
 
-	if _, ok := v["id"]; !ok {
-		err := errors.New("invalid data")
-		log.WithFields(log.Fields{
-			"err": err,
-		}).Errorln("marathonfile is missing 'id' key: ", string(b))
-		return err
-	}
+	app.Container.Docker.AddParameter("log-driver", "json-file")
+	app.Container.Docker.AddParameter("log-opt", "max-size=512m")
 
-	var buff bytes.Buffer
+	log.WithFields(log.Fields{
+		"app": app.ID,
+	}).Info("updating application")
 
-	if err := json.Indent(&buff, b, "", "\t"); err != nil {
-		log.WithFields(log.Fields{
-			"err": err,
-		}).Error("failed to parse JSON: ", string(b))
-		return err
-	}
-
-	log.Info("sending data to marathon server")
-
-	u, err := url.Parse(p.Server)
+	dep, err := client.UpdateApplication(&app, true)
 
 	if err != nil {
 		log.WithFields(log.Fields{
 			"err": err,
-		}).Error("failed to parser marathon url")
+			"app": app.ID,
+		}).Error("failed to update application")
 		return err
 	}
 
-	u.Path = fmt.Sprintf("/v2/apps/%s", v["id"])
-	u.RawQuery = "force=true"
+	log.WithFields(log.Fields{
+		"app":        app.ID,
+		"deployment": dep.DeploymentID,
+		"timeout":    p.Timeout,
+	}).Info("deploying application")
 
-	log.Infoln("PUT", u.String())
-
-	req, err := http.NewRequest(http.MethodPut, u.String(), &buff)
-
-	if err != nil {
+	if err := client.WaitOnDeployment(dep.DeploymentID, p.Timeout); err != nil {
 		log.WithFields(log.Fields{
-			"err": err,
-		}).Error("error creating request")
+			"err":        err,
+			"app":        app.ID,
+			"deployment": dep.DeploymentID,
+		}).Error("failed to deploy application")
 		return err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-
-	if err != nil {
-		log.WithFields(log.Fields{
-			"err": err,
-		}).Error("error creating request")
-		return err
-	}
-
-	if resp.StatusCode >= 300 {
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-
-		if err == nil {
-			err = errors.New(string(body))
-		}
-
-		log.WithFields(log.Fields{
-			"status": resp.Status,
-			"err":    err,
-		}).Error("error updating application")
-		return err
-	}
+	log.WithFields(log.Fields{
+		"app": app.ID,
+	}).Info("application deployed successfully")
 
 	return nil
 }
@@ -130,7 +115,9 @@ func (p *Plugin) Exec() error {
 // ReadInput reads Marathonfile/Appconfig data
 func (p Plugin) ReadInput() (data string, err error) {
 	if p.Marathonfile != "" {
-		log.Info("parsing marathonfile ", p.Marathonfile)
+		log.WithFields(log.Fields{
+			"file": p.Marathonfile,
+		}).Info("parsing marathonfile")
 
 		// When 0.9 comes out, limit to secrets and other Drone variables
 		b, err := ioutil.ReadFile(p.Marathonfile)
@@ -139,12 +126,14 @@ func (p Plugin) ReadInput() (data string, err error) {
 			return "", err
 		}
 
+		log.Infof("App data: \n%s", string(b))
 		return envsubst.EvalEnv(string(b))
 	}
 
 	if p.AppConfig != "" {
-		log.Warn("app_config is deprecated and will be removed, please use a marathonfile instead")
+		log.Warn("app_config is deprecated, please use a marathonfile instead")
 
+		log.Infof("App data: \n%s", string(p.AppConfig))
 		return envsubst.EvalEnv(p.AppConfig)
 	}
 
@@ -163,7 +152,7 @@ func parseData(data string) (b []byte, err error) {
 		return
 	}
 
-	err = errors.New("invalid data")
+	err = errors.New("invalid data format")
 	return
 }
 
