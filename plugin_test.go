@@ -28,23 +28,22 @@ func TestPlugin(t *testing.T) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 
-			want := "/v2/apps/quintoandar/app"
+			want := "/v2/deployments"
 			if r.URL.Path != want {
 				t.Fatalf("got: %v want: %v", r.URL.Path, want)
 			}
 
-			http.Error(
-				w,
-				`{"message": "App '/quintoandar/app' does not exist"}`,
-				http.StatusNotFound,
-			)
+			w.WriteHeader(http.StatusOK)
+
+			// return empty deployment list (deployment was successful)
+			w.Write([]byte(`[]`))
 
 			return
 		}
 
-		if r.Method == http.MethodPost {
+		if r.Method == http.MethodPut {
 
-			want := "/v2/apps"
+			want := "/v2/apps/quintoandar/app"
 			if r.URL.Path != want {
 				t.Fatalf("got: %v want: %v", r.URL.Path, want)
 			}

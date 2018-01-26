@@ -76,61 +76,33 @@ func (p *Plugin) Exec() error {
 	app.Container.Docker.AddParameter("log-driver", "json-file")
 	app.Container.Docker.AddParameter("log-opt", "max-size=512m")
 
-	if _, err = client.Application(app.ID); err != nil {
+	log.WithFields(log.Fields{
+		"app": app.ID,
+	}).Info("updating application")
+
+	dep, err := client.UpdateApplication(&app, true)
+
+	if err != nil {
 		log.WithFields(log.Fields{
 			"err": err,
 			"app": app.ID,
-		}).Info("failed to get application")
+		}).Error("failed to update application")
+		return err
+	}
 
+	log.WithFields(log.Fields{
+		"app":        app.ID,
+		"deployment": dep.DeploymentID,
+		"timeout":    p.Timeout,
+	}).Info("deploying application")
+
+	if err := client.WaitOnDeployment(dep.DeploymentID, p.Timeout); err != nil {
 		log.WithFields(log.Fields{
-			"app": app.ID,
-		}).Info("creating application")
-
-		// this should return a deploymetn!
-		newApp, err := client.CreateApplication(&app)
-
-		if err != nil {
-			log.WithFields(log.Fields{
-				"err": err,
-				"app": app.ID,
-			}).Errorf("failed to create application")
-			return err
-		}
-
-		log.WithFields(log.Fields{
-			"app":         newApp.ID,
-			"deployments": newApp.Deployments,
-		}).Info("deploying application")
-
-	} else {
-		log.WithFields(log.Fields{
-			"app": app.ID,
-		}).Info("updating application")
-
-		dep, err := client.UpdateApplication(&app, true)
-
-		if err != nil {
-			log.WithFields(log.Fields{
-				"err": err,
-				"app": app.ID,
-			}).Error("failed to update application")
-			return err
-		}
-
-		log.WithFields(log.Fields{
+			"err":        err,
 			"app":        app.ID,
 			"deployment": dep.DeploymentID,
-			"timeout":    p.Timeout,
-		}).Info("deploying application")
-
-		if err := client.WaitOnDeployment(dep.DeploymentID, p.Timeout); err != nil {
-			log.WithFields(log.Fields{
-				"err":        err,
-				"app":        app.ID,
-				"deployment": dep.DeploymentID,
-			}).Error("failed to deploy application")
-			return err
-		}
+		}).Error("failed to deploy application")
+		return err
 	}
 
 	log.WithFields(log.Fields{
@@ -154,12 +126,14 @@ func (p Plugin) ReadInput() (data string, err error) {
 			return "", err
 		}
 
+		log.Infof("App data: \n%s", string(b))
 		return envsubst.EvalEnv(string(b))
 	}
 
 	if p.AppConfig != "" {
 		log.Warn("app_config is deprecated, please use a marathonfile instead")
 
+		log.Infof("App data: \n%s", string(p.AppConfig))
 		return envsubst.EvalEnv(p.AppConfig)
 	}
 
