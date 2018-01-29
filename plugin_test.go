@@ -11,6 +11,8 @@ var app = `
 id: quintoandar/app
 cpus: 0.1
 mem: 128
+fetch:
+  - uri: "http://internal.lb.maintenance.marathon.mesos:10002/docker.tar.gz"
 container:
   type: DOCKER
   docker: 

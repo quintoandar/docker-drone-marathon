@@ -73,6 +73,14 @@ func (p *Plugin) Exec() error {
 		return err
 	}
 
+	// Set every uri extract to true by default
+	var fetch []marathon.Fetch
+	for _, v := range *app.Fetch {
+		v.Extract = true
+		fetch = append(fetch, v)
+	}
+	app.Fetch = &fetch
+
 	app.Container.Docker.AddParameter("log-driver", "json-file")
 	app.Container.Docker.AddParameter("log-opt", "max-size=512m")
 
