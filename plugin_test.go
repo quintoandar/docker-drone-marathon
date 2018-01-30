@@ -11,6 +11,22 @@ var app = `
 id: quintoandar/app
 cpus: 0.1
 mem: 128
+container:
+  type: DOCKER
+  docker: 
+    image: quintoandar/app
+    network: BRIDGE
+    portMappings:
+      - containerPort: 8080
+healthChecks:
+  - protocol: MESOS_HTTP
+    path: /health
+`
+
+var appWithURI = `
+id: quintoandar/app
+cpus: 0.1
+mem: 128
 fetch:
   - uri: "http://internal.lb.maintenance.marathon.mesos:10002/docker.tar.gz"
 container:
@@ -25,8 +41,15 @@ healthChecks:
     path: /health
 `
 
-func TestPlugin(t *testing.T) {
+func TestAppDeploy(t *testing.T) {
+	deploy(t, app)
+}
 
+func TestAppWithURIDeploy(t *testing.T) {
+	deploy(t, appWithURI)
+}
+
+func deploy(t *testing.T, app string) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 
