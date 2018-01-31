@@ -46,8 +46,7 @@ func (p *Plugin) Exec() error {
 
 	if err != nil {
 		log.WithFields(log.Fields{
-			"err":  err,
-			"data": string(b),
+			"err": err,
 		}).Errorf("failed to parse input data into JSON format")
 		return err
 	}
