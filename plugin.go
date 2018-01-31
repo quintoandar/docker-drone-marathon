@@ -134,6 +134,18 @@ func (p *Plugin) Exec() error {
 					"err":      err,
 					"rollback": revert.DeploymentID,
 				}).Error("failed to rollback")
+
+				log.WithFields(log.Fields{
+					"rollback": revert.DeploymentID,
+				}).Info("force deleting rollback back")
+
+				if _, err := client.DeleteDeployment(revert.DeploymentID, true); err != nil {
+					log.WithFields(log.Fields{
+						"err":      err,
+						"rollback": revert.DeploymentID,
+					}).Error("failed to force delete rollback")
+				}
+
 				return err
 			}
 
