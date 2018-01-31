@@ -34,9 +34,14 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:   "timeout",
-			Usage:  "deployment timeout in minutes",
+			Usage:  "deployment timeout in minutes (applies to rollbacks too)",
 			Value:  "5",
 			EnvVar: "PLUGIN_TIMEOUT",
+		},
+		cli.BoolTFlag{
+			Name:   "rollback",
+			Usage:  "if true will attempt to rollback failed deployments",
+			EnvVar: "PLUGIN_ROLLBACK",
 		},
 	}
 	if err := app.Run(os.Args); err != nil {
@@ -60,6 +65,7 @@ func run(c *cli.Context) error {
 		Marathonfile: c.String("marathonfile"),
 		AppConfig:    c.String("app_config"),
 		Timeout:      time.Duration(timeout) * time.Minute,
+		Rollback:     c.BoolT("rollback"),
 	}
 
 	return plugin.Exec()

@@ -69,6 +69,12 @@
 			"revisionTime": "2017-08-03T09:04:06Z"
 		},
 		{
+			"checksumSHA1": "5wJsOcV7u6ijG48Y97GJBoG2BKc=",
+			"path": "gopkg.in/h2non/gock.v1",
+			"revision": "84d599244901620fb3eb96473eb9e50619f69b47",
+			"revisionTime": "2017-07-27T12:10:12Z"
+		},
+		{
 			"checksumSHA1": "qOmvuDm+F+2nQQecUZBVkZrTn6Y=",
 			"path": "gopkg.in/yaml.v2",
 			"revision": "d670f9405373e636a5a2765eea47fac0c9bc91a4",

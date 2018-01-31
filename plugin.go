@@ -20,6 +20,7 @@ type Plugin struct {
 	Marathonfile string
 	AppConfig    string
 	Timeout      time.Duration
+	Rollback     bool
 }
 
 // Exec runs the plugin
@@ -29,6 +30,7 @@ func (p *Plugin) Exec() error {
 		"server":       p.Server,
 		"marathonfile": p.Marathonfile,
 		"timeout":      p.Timeout,
+		"rollback":     p.Rollback,
 	}).Info("attempting to start job")
 
 	data, err := p.ReadInput()
@@ -101,7 +103,6 @@ func (p *Plugin) Exec() error {
 	}
 
 	log.WithFields(log.Fields{
-		"app":        app.ID,
 		"deployment": dep.DeploymentID,
 		"timeout":    p.Timeout,
 	}).Info("deploying application")
@@ -109,9 +110,42 @@ func (p *Plugin) Exec() error {
 	if err := client.WaitOnDeployment(dep.DeploymentID, p.Timeout); err != nil {
 		log.WithFields(log.Fields{
 			"err":        err,
-			"app":        app.ID,
 			"deployment": dep.DeploymentID,
 		}).Error("failed to deploy application")
+
+		if p.Rollback {
+
+			log.WithFields(log.Fields{
+				"deployment": dep.DeploymentID,
+			}).Info("rolling back")
+
+			revert, err := client.DeleteDeployment(dep.DeploymentID, false)
+
+			if err != nil {
+				log.WithFields(log.Fields{
+					"err":        err,
+					"deployment": dep.DeploymentID,
+				}).Error("failed to start rollback")
+				return err
+			}
+
+			if err := client.WaitOnDeployment(revert.DeploymentID, p.Timeout); err != nil {
+				log.WithFields(log.Fields{
+					"err":      err,
+					"rollback": revert.DeploymentID,
+				}).Error("failed to rollback")
+				return err
+			}
+
+			log.WithFields(log.Fields{
+				"rollback": revert.DeploymentID,
+			}).Info("deployment rollback was successful")
+		} else {
+			log.WithFields(log.Fields{
+				"deployment": dep.DeploymentID,
+			}).Warning("rollback is not activated")
+		}
+
 		return err
 	}
 
