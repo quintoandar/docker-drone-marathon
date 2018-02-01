@@ -20,6 +20,7 @@ type Plugin struct {
 	Marathonfile string
 	AppConfig    string
 	Timeout      time.Duration
+	Rollback     bool
 }
 
 // Exec runs the plugin
@@ -29,6 +30,7 @@ func (p *Plugin) Exec() error {
 		"server":       p.Server,
 		"marathonfile": p.Marathonfile,
 		"timeout":      p.Timeout,
+		"rollback":     p.Rollback,
 	}).Info("attempting to start job")
 
 	data, err := p.ReadInput()
@@ -44,8 +46,7 @@ func (p *Plugin) Exec() error {
 
 	if err != nil {
 		log.WithFields(log.Fields{
-			"err":  err,
-			"data": string(b),
+			"err": err,
 		}).Errorf("failed to parse input data into JSON format")
 		return err
 	}
@@ -86,38 +87,84 @@ func (p *Plugin) Exec() error {
 	app.Container.Docker.AddParameter("log-driver", "json-file")
 	app.Container.Docker.AddParameter("log-opt", "max-size=512m")
 
-	log.WithFields(log.Fields{
+	ctx := log.WithFields(log.Fields{
 		"app": app.ID,
-	}).Info("updating application")
+	})
+
+	ctx.Info("updating application")
 
 	dep, err := client.UpdateApplication(&app, true)
 
 	if err != nil {
-		log.WithFields(log.Fields{
+		ctx.WithFields(log.Fields{
 			"err": err,
-			"app": app.ID,
 		}).Error("failed to update application")
 		return err
 	}
 
-	log.WithFields(log.Fields{
-		"app":        app.ID,
+	ctx.WithFields(log.Fields{
 		"deployment": dep.DeploymentID,
 		"timeout":    p.Timeout,
 	}).Info("deploying application")
 
 	if err := client.WaitOnDeployment(dep.DeploymentID, p.Timeout); err != nil {
-		log.WithFields(log.Fields{
+		ctx.WithFields(log.Fields{
 			"err":        err,
-			"app":        app.ID,
 			"deployment": dep.DeploymentID,
+			"timeout":    p.Timeout,
 		}).Error("failed to deploy application")
+
+		if p.Rollback {
+
+			ctx.WithFields(log.Fields{
+				"deployment": dep.DeploymentID,
+				"timeout":    p.Timeout,
+			}).Info("rolling back")
+
+			rollback, err := client.DeleteDeployment(dep.DeploymentID, false)
+
+			if err != nil {
+				ctx.WithFields(log.Fields{
+					"err":        err,
+					"deployment": dep.DeploymentID,
+				}).Error("failed to start rollback")
+				return err
+			}
+
+			if err := client.WaitOnDeployment(rollback.DeploymentID, p.Timeout); err != nil {
+				ctx.WithFields(log.Fields{
+					"err":      err,
+					"rollback": rollback.DeploymentID,
+					"timeout":  p.Timeout,
+				}).Error("failed to rollback")
+
+				ctx.WithFields(log.Fields{
+					"rollback": rollback.DeploymentID,
+				}).Info("force deleting rollback")
+
+				if _, err := client.DeleteDeployment(rollback.DeploymentID, true); err != nil {
+					ctx.WithFields(log.Fields{
+						"err":      err,
+						"rollback": rollback.DeploymentID,
+					}).Error("failed to force delete rollback")
+				}
+
+				return err
+			}
+
+			ctx.WithFields(log.Fields{
+				"rollback": rollback.DeploymentID,
+			}).Info("deployment rollback was successful")
+		} else {
+			ctx.WithFields(log.Fields{
+				"deployment": dep.DeploymentID,
+			}).Warning("rollback is not enabled")
+		}
+
 		return err
 	}
 
-	log.WithFields(log.Fields{
-		"app": app.ID,
-	}).Info("application deployed successfully")
+	ctx.Info("application deployed successfully")
 
 	return nil
 }
