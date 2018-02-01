@@ -9,7 +9,7 @@ import (
 	"github.com/drone/envsubst"
 	"github.com/ghodss/yaml"
 
-	marathon "github.com/gambol99/go-marathon"
+	marathon "github.com/fbcbarbosa/go-marathon"
 
 	log "github.com/Sirupsen/logrus"
 )
@@ -121,39 +121,18 @@ func (p *Plugin) Exec() error {
 				"timeout":    p.Timeout,
 			}).Info("rolling back")
 
-			rollback, err := client.DeleteDeployment(dep.DeploymentID, true)
+			_, err := client.DeleteDeployment(dep.DeploymentID, true)
 
 			if err != nil {
 				ctx.WithFields(log.Fields{
 					"err":        err,
 					"deployment": dep.DeploymentID,
-				}).Error("failed to start rollback")
-				return err
-			}
-
-			if err := client.WaitOnDeployment(rollback.DeploymentID, p.Timeout); err != nil {
-				ctx.WithFields(log.Fields{
-					"err":      err,
-					"rollback": rollback.DeploymentID,
-					"timeout":  p.Timeout,
-				}).Error("failed to rollback")
-
-				ctx.WithFields(log.Fields{
-					"rollback": rollback.DeploymentID,
-				}).Info("force deleting rollback")
-
-				if _, err := client.DeleteDeployment(rollback.DeploymentID, true); err != nil {
-					ctx.WithFields(log.Fields{
-						"err":      err,
-						"rollback": rollback.DeploymentID,
-					}).Error("failed to force delete rollback")
-				}
-
+				}).Error("failed rollback")
 				return err
 			}
 
 			ctx.WithFields(log.Fields{
-				"rollback": rollback.DeploymentID,
+				"deployment": dep.DeploymentID,
 			}).Info("deployment rollback was successful")
 		} else {
 			ctx.WithFields(log.Fields{
@@ -165,7 +144,6 @@ func (p *Plugin) Exec() error {
 	}
 
 	ctx.Info("application deployed successfully")
-
 	return nil
 }
 

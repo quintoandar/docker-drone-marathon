@@ -11,6 +11,7 @@ It currently supports
 - Helper filters for pulling the status, configuration and tasks
 - Multiple Endpoint support for HA deployments
 - Marathon Event Subscriptions and Event Streams
+- Pods
 
 Note: the library is still under active development; users should expect frequent (possibly breaking) API changes for the time being.
 
@@ -25,7 +26,7 @@ You can use `examples/docker-compose.yml` in order to start a test cluster.
 
 ### Creating a client
 
-```Go
+```go
 import (
 	marathon "github.com/gambol99/go-marathon"
 )
@@ -38,13 +39,13 @@ if err != nil {
 	log.Fatalf("Failed to create a client for marathon, error: %s", err)
 }
 
-applications, err := client.Applications()
+applications, err := client.Applications(nil)
 ...
 ```
 
 Note, you can also specify multiple endpoint for Marathon (i.e. you have setup Marathon in HA mode and having multiple running)
 
-```Go
+```go
 marathonURL := "http://10.241.1.71:8080,10.241.1.72:8080,10.241.1.73:8080"
 ```
 
@@ -53,7 +54,7 @@ background process will continue to ping the member until it's back online.
 
 You can also pass a custom path to the URL, which is especially needed in case of DCOS:
 
-```Go
+```go
 marathonURL := "http://10.241.1.71:8080/cluster,10.241.1.72:8080/cluster,10.241.1.73:8080/cluster"
 ```
 
@@ -70,7 +71,7 @@ Two clients can be given independently of each other:
 
 If no `HTTPSSEClient` is given but an `HTTPClient` is, it will be used for SSE subscriptions as well (thereby overriding the default SSE HTTP client).
 
-```Go
+```go
 marathonURL := "http://10.241.1.71:8080"
 config := marathon.NewDefaultConfig()
 config.URL = marathonURL
@@ -102,31 +103,32 @@ config.HTTPSSEClient = &http.Client{
 
 ### Listing the applications
 
-```Go
-applications, err := client.Applications()
+```go
+applications, err := client.Applications(nil)
 if err != nil {
-	log.Fatalf("Failed to list applications")
+	log.Fatalf("Failed to list applications: %s", err)
 }
 
-log.Printf("Found %d applications running", len(applications.Apps))
+log.Printf("Found %d application(s) running", len(applications.Apps))
 for _, application := range applications.Apps {
 	log.Printf("Application: %s", application)
-	details, err := client.Application(application.ID)
-	assert(err)
-	if details.Tasks != nil && len(details.Tasks) > 0 {
+	appID := application.ID
+
+	details, err := client.Application(appID)
+	if err != nil {
+		log.Fatalf("Failed to get application %s: %s", appID, err)
+	}
+	if details.Tasks != nil {
 		for _, task := range details.Tasks {
-			log.Printf("task: %s", task)
+			log.Printf("application %s has task: %s", appID, task)
 		}
-		// check the health of the application
-		health, err := client.ApplicationOK(details.ID)
-		log.Printf("Application: %s, healthy: %t", details.ID, health)
 	}
 }
 ```
 
 ### Creating a new application
 
-```Go
+```go
 log.Printf("Deploying a new application")
 application := marathon.NewDockerApplication().
   Name(applicationName).
@@ -158,7 +160,7 @@ Note: Applications may also be defined by means of initializing a `marathon.Appl
 
 Change the number of application instances to 4
 
-```Go
+```go
 log.Printf("Scale to 4 instances")
 if err := client.ScaleApplicationInstances(application.ID, 4); err != nil {
 	log.Fatalf("Failed to delete the application: %s, error: %s", application, err)
@@ -166,6 +168,38 @@ if err := client.ScaleApplicationInstances(application.ID, 4); err != nil {
 	client.WaitOnApplication(application.ID, 30 * time.Second)
 	log.Printf("Successfully scaled the application")
 }
+```
+
+### Pods
+
+Pods allow you to deploy groups of tasks as a unit. All tasks in a single instance of a pod share networking and storage. View the [Marathon documentation](https://mesosphere.github.io/marathon/docs/pods.html) for more details on this feature.
+
+Examples of their usage can be seen in the `examples/pods` directory, and a smaller snippet is below.
+
+```Go
+// Initialize a single-container pod running nginx
+pod := marathon.NewPod()
+
+image := marathon.NewDockerPodContainerImage().SetID("nginx")
+
+container := marathon.NewPodContainer().
+	SetName("container", i).
+	CPUs(0.1).
+	Memory(128).
+	SetImage(image)
+
+pod.Name("mypod").AddContainer(container)
+
+// Create it and wait for it to start up
+pod, err := client.CreatePod(pod)
+err = client.WaitOnPod(pod.ID, time.Minute*1)
+
+// Scale it
+pod.Count(5)
+pod, err = client.UpdatePod(pod, true)
+
+// Delete it
+id, err := client.DeletePod(pod.ID, true)
 ```
 
 ### Subscription & Events
@@ -182,7 +216,7 @@ Event subscriptions can also be individually controlled with the `Subscribe` and
 
 Only available in Marathon >= 0.9.0. Does not require any special configuration or prerequisites.
 
-```Go
+```go
 // Configure client
 config := marathon.NewDefaultConfig()
 config.URL = marathonURL
@@ -229,7 +263,7 @@ additional settings:
 - `EventsPort` — built-in web server port. Default `10001`.
 - `CallbackURL` — custom callback URL. Default `""`.
 
-```Go
+```go
 // Configure client
 config := marathon.NewDefaultConfig()
 config.URL = marathonURL
@@ -273,7 +307,7 @@ See [events.go](events.go) for a full list of event IDs.
 #### Controlling subscriptions
 If you simply want to (de)register event subscribers (i.e. without starting an internal web server) you can use the `Subscribe` and `Unsubscribe` methods.
 
-```Go
+```go
 // Configure client
 config := marathon.NewDefaultConfig()
 config.URL = marathonURL
@@ -392,7 +426,7 @@ and the tests
 func TestFoo(t * testing.T) {
 	endpoint := newFakeMarathonEndpoint(t, nil)  // No custom configs given.
 	defer endpoint.Close()
-	app, err := endpoint.Client.Applications()
+	app, err := endpoint.Client.Applications(nil)
 	// Do something with "foo"
 }
 
@@ -403,7 +437,7 @@ func TestFoo(t * testing.T) {
 		},
 	})
 	defer endpoint.Close()
-	app, err := endpoint.Client.Applications()
+	app, err := endpoint.Client.Applications(nil)
 	// Do something with "bar"
 }
 ```

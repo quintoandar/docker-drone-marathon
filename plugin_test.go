@@ -96,7 +96,7 @@ func TestAppFailedDeploy(t *testing.T) {
 		})
 
 	// return an error twice (deployment and rollback will fail)
-	gock.New(server).Times(2).Get("/v2/deployments").Reply(400).JSON([]map[string]string{})
+	gock.New(server).Times(1).Get("/v2/deployments").Reply(400).JSON([]map[string]string{})
 
 	plugin := Plugin{
 		Server:       server,
