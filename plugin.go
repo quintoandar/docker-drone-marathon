@@ -121,7 +121,7 @@ func (p *Plugin) Exec() error {
 				"timeout":    p.Timeout,
 			}).Info("rolling back")
 
-			rollback, err := client.DeleteDeployment(dep.DeploymentID, false)
+			rollback, err := client.DeleteDeployment(dep.DeploymentID, true)
 
 			if err != nil {
 				ctx.WithFields(log.Fields{
