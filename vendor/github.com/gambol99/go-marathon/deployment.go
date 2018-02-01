@@ -108,7 +108,7 @@ func (r *marathonClient) Deployments() ([]*Deployment, error) {
 // 	force:	whether or not to force the deletion
 func (r *marathonClient) DeleteDeployment(id string, force bool) (*DeploymentID, error) {
 	deployment := new(DeploymentID)
-	err := r.apiDelete(fmt.Sprintf("%s/%s", marathonAPIDeployments, id), nil, deployment)
+	err := r.apiDelete(fmt.Sprintf("%s/%s?force=%t", marathonAPIDeployments, id, force), nil, deployment)
 	if err != nil {
 		return nil, err
 	}
