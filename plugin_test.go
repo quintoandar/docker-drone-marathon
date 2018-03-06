@@ -64,6 +64,7 @@ func deploy(t *testing.T, app string) {
 		Server:       server,
 		Marathonfile: "",
 		AppConfig:    app,
+		Rollback:     false,
 		Timeout:      time.Duration(5) * time.Minute,
 	}
 
@@ -79,15 +80,19 @@ func deploy(t *testing.T, app string) {
 func TestAppFailedDeploy(t *testing.T) {
 	defer gock.Off()
 
-	// accept application
-	gock.New(server).Put("/v2/apps/quintoandar/app").Reply(201).
+	gock.New(server).Get("/v2/apps/quintoandar/app").Reply(200).
+		File("test_response.json")
+
+	// accept application (twice)
+	gock.New(server).Times(2).Put("/v2/apps/quintoandar/app").Reply(201).
 		JSON(map[string]string{
 			"deploymentId": "5ed4c0c5-9ff8-4a6f-a0cd-f57f59a34b43",
 			"version":      "2015-09-29T15:59:51.164Z",
 		})
 
-	// accept delete
+	// accept delete (once)
 	gock.New(server).
+		Times(1).
 		Delete("/v2/deployments/5ed4c0c5-9ff8-4a6f-a0cd-f57f59a34b43").
 		Reply(202).
 		JSON(map[string]string{
@@ -95,8 +100,69 @@ func TestAppFailedDeploy(t *testing.T) {
 			"version":      "2015-09-29T15:59:51.164Z",
 		})
 
-	// return an error twice (deployment and rollback will fail)
+	// indicate that rollback can proceed because all tasks are down
+	gock.New(server).
+		Times(1).
+		Get("/v2/apps/quintoandar/app/tasks").
+		Reply(200).
+		JSON(map[string]string{})
+
+	// return an error once
 	gock.New(server).Times(1).Get("/v2/deployments").Reply(400).JSON([]map[string]string{})
+
+	// but not on rollback
+	gock.New(server).Times(1).Get("/v2/deployments").Reply(200).JSON([]map[string]string{})
+
+	plugin := Plugin{
+		Server:       server,
+		Marathonfile: "",
+		AppConfig:    app,
+		Rollback:     true,
+		Timeout:      time.Duration(5) * time.Minute,
+	}
+
+	if err := plugin.Exec(); err == nil {
+		t.Fatalf("plugin.Exec did not fail: \n%v", err)
+	}
+
+	// guarantee that delete/wait on rollback were called
+	if !gock.IsDone() {
+		t.Fatalf("gock.IsDone() false")
+	}
+}
+
+func TestAppFailedDeployAndRollback(t *testing.T) {
+	defer gock.Off()
+
+	gock.New(server).Get("/v2/apps/quintoandar/app").Reply(200).
+		File("test_response.json")
+
+	// accept application (twice)
+	gock.New(server).Times(2).Put("/v2/apps/quintoandar/app").Reply(201).
+		JSON(map[string]string{
+			"deploymentId": "5ed4c0c5-9ff8-4a6f-a0cd-f57f59a34b43",
+			"version":      "2015-09-29T15:59:51.164Z",
+		})
+
+	// accept delete (twice)
+	gock.New(server).
+		Times(2).
+		Delete("/v2/deployments/5ed4c0c5-9ff8-4a6f-a0cd-f57f59a34b43").
+		Reply(202).
+		JSON(map[string]string{
+			"deploymentId": "97c136bf-5a28-4821-9d94-480d9fbb01c8",
+			"version":      "2015-09-29T15:59:51.164Z",
+		})
+
+	// indicate that rollback can proceed because all tasks are down
+	gock.New(server).
+		Times(1).
+		Get("/v2/apps/quintoandar/app/tasks").
+		Reply(200).
+		JSON(map[string]string{})
+
+	// return an error twice
+	gock.New(server).Times(2).Get("/v2/deployments").Reply(400).JSON([]map[string]string{})
 
 	plugin := Plugin{
 		Server:       server,

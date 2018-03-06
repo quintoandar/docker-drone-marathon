@@ -1,0 +1,25 @@
+{
+  "app": {
+    "id": "quintoandar/app",
+    "cpus": 0.1,
+    "mem": 128,
+    "container": {
+      "type": "DOCKER",
+      "docker": {
+        "image": "quintoandar/app",
+        "network": "BRIDGE",
+        "portMappings": [
+          {
+            "containerPort": 8080
+          }
+        ]
+      }
+    },
+    "healthChecks": [
+      {
+        "protocol": "MESOS_HTTP",
+        "path": "/health"
+      }
+    ]
+  }
+}
