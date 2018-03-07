@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"strings"
 	"time"
 
 	"github.com/drone/envsubst"
@@ -84,60 +85,160 @@ func (p *Plugin) Exec() error {
 		app.Fetch = &fetch
 	}
 
+	// Set faster default healthcheck timing configuration to avoid long rollbacks
+	for _, h := range *app.HealthChecks {
+		if h.GracePeriodSeconds == 0 {
+			h.GracePeriodSeconds = 60
+		}
+		if h.IntervalSeconds == 0 {
+			h.IntervalSeconds = 15
+		}
+		if h.TimeoutSeconds == 0 {
+			h.TimeoutSeconds = 10
+		}
+	}
+
 	app.Container.Docker.AddParameter("log-driver", "json-file")
 	app.Container.Docker.AddParameter("log-opt", "max-size=512m")
 
-	ctx := log.WithFields(log.Fields{
-		"app": app.ID,
-	})
+	ctx := log.WithField("app", app.ID)
+
+	var prevVersion *marathon.ApplicationVersion
+
+	// load application in case we need to roll back
+	if p.Rollback {
+		stableApp, err := client.Application(app.ID)
+
+		if err != nil {
+			ctx.WithError(err).Warning("could not get application information" +
+				" from marathon (only required in case of rollback)")
+		} else {
+			prevVersion = &marathon.ApplicationVersion{
+				Version: stableApp.Version,
+			}
+		}
+	}
 
 	ctx.Info("updating application")
 
 	dep, err := client.UpdateApplication(&app, true)
 
 	if err != nil {
-		ctx.WithFields(log.Fields{
-			"err": err,
-		}).Error("failed to update application")
+		ctx.WithError(err).Error("failed to start application update")
 		return err
 	}
 
 	ctx.WithFields(log.Fields{
 		"deployment": dep.DeploymentID,
 		"timeout":    p.Timeout,
+		"version":    dep.Version,
 	}).Info("deploying application")
 
 	if err := client.WaitOnDeployment(dep.DeploymentID, p.Timeout); err != nil {
+
 		ctx.WithFields(log.Fields{
 			"err":        err,
 			"deployment": dep.DeploymentID,
 			"timeout":    p.Timeout,
+			"version":    dep.Version,
 		}).Error("failed to deploy application")
 
 		if p.Rollback {
 
 			ctx.WithFields(log.Fields{
 				"deployment": dep.DeploymentID,
-				"timeout":    p.Timeout,
-			}).Info("rolling back")
+				"version":    dep.Version,
+			}).Info("cancelling deployment")
 
-			_, err := client.DeleteDeployment(dep.DeploymentID, true)
+			if _, err := client.DeleteDeployment(dep.DeploymentID, true); err != nil {
+				ctx.WithError(err).Error("failed to cancel deployment")
+				return err
+			}
 
-			if err != nil {
-				ctx.WithFields(log.Fields{
-					"err":        err,
-					"deployment": dep.DeploymentID,
-				}).Error("failed rollback")
+			if prevVersion == nil {
+				ctx.Error("no previous version available to roll back to")
+			}
+
+			ctx.WithFields(log.Fields{
+				"deployment": dep.DeploymentID,
+				"version":    dep.Version,
+			}).Info("waiting for all failed tasks to die")
+
+			if err := waitOnTasksToDie(client, app.ID, dep.Version, p.Timeout); err != nil {
+				ctx.WithError(err).Error("failed to rollback")
 				return err
 			}
 
 			ctx.WithFields(log.Fields{
 				"deployment": dep.DeploymentID,
-			}).Info("deployment rollback was successful")
-		} else {
+				"timeout":    p.Timeout,
+				"version":    prevVersion.Version,
+			}).Info("rolling back to previous application version")
+
 			ctx.WithFields(log.Fields{
 				"deployment": dep.DeploymentID,
-			}).Warning("rollback is not enabled")
+				"timeout":    p.Timeout,
+				"version":    prevVersion.Version,
+			}).Info("a new rolling deployment will start")
+
+			rollback, err := client.SetApplicationVersion(app.ID, prevVersion)
+
+			if err != nil {
+				ctx.WithError(err).Error("failed to rollback")
+				return err
+			}
+
+			if err := client.WaitOnDeployment(rollback.DeploymentID, p.Timeout); err != nil {
+
+				ctx.WithFields(log.Fields{
+					"err":      err,
+					"rollback": rollback.DeploymentID,
+					"timeout":  p.Timeout,
+					"version":  prevVersion.Version,
+				}).Error("failed to deploy rollback")
+
+				ctx.WithFields(log.Fields{
+					"rollback": rollback.DeploymentID,
+					"timeout":  p.Timeout,
+					"version":  prevVersion.Version,
+				}).Info("cancelling rollback")
+
+				if _, err := client.DeleteDeployment(rollback.DeploymentID, true); err != nil {
+					ctx.WithFields(log.Fields{
+						"err":      err,
+						"rollback": rollback.DeploymentID,
+						"version":  prevVersion.Version,
+					}).Error("failed to cancel rollback")
+					return err
+				}
+
+				// override Marathon timeout error with a more descriptive error
+				if strings.Contains(err.Error(), "timed out") {
+					err = errors.New(
+						"your rollback has failed and the application is at an" +
+							" unknown state, please check your application logs",
+					)
+				}
+
+				return err
+			}
+
+			ctx.WithFields(log.Fields{
+				"deployment": dep.DeploymentID,
+				"rollback":   rollback.DeploymentID,
+				"version":    prevVersion.Version,
+			}).Info("rollback was successful")
+
+		} else {
+			ctx.WithField("deployment", dep.DeploymentID).Warning("rollback is not enabled")
+		}
+
+		// override Marathon timeout error with a more descriptive error
+		if strings.Contains(err.Error(), "timed out") {
+			err = errors.New(
+				"could not deploy your application within the maximum timeout," +
+					" please check your application logs",
+			)
 		}
 
 		return err
@@ -199,4 +300,51 @@ func isJSON(s string) bool {
 func isYAML(s string) bool {
 	var y map[string]interface{}
 	return yaml.Unmarshal([]byte(s), &y) == nil
+}
+
+func waitOnTasksToDie(client marathon.Marathon, name, version string, timeout time.Duration) error {
+	if val, err := areTasksDead(client, name, version); err != nil || val {
+		return err
+	}
+
+	tick := time.Tick(time.Second * 5)
+	tout := time.After(timeout)
+
+	for {
+		select {
+
+		case <-tick:
+
+			if val, err := areTasksDead(client, name, version); err != nil || val {
+				return err
+			}
+
+		case <-tout:
+			return errors.New("timed out")
+		}
+	}
+}
+
+func areTasksDead(client marathon.Marathon, name, version string) (bool, error) {
+
+	tasks, err := client.Tasks(name)
+
+	if err != nil {
+		return false, err
+	}
+
+	return !containsVersion(tasks.Tasks, version), nil
+}
+
+func containsVersion(tasks []marathon.Task, version string) bool {
+	for _, t := range tasks {
+		if t.Version == version {
+			log.WithFields(log.Fields{
+				"task":    t.ID,
+				"version": version,
+			}).Info("waiting for failed task to die")
+			return true
+		}
+	}
+	return false
 }
