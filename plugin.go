@@ -52,6 +52,8 @@ func (p *Plugin) Exec() error {
 		return err
 	}
 
+	log.Info("searching Marathon clusters")
+
 	config := marathon.NewDefaultConfig()
 	config.URL = p.Server
 
@@ -66,14 +68,15 @@ func (p *Plugin) Exec() error {
 
 	var app marathon.Application
 
-	log.Infof("searching Marathon clusters")
-
 	if err := app.UnmarshalJSON(b); err != nil {
 		log.WithFields(log.Fields{
 			"err": err,
 		}).Error("failed to unmarshal marathonfile: ", string(b))
 		return err
 	}
+
+	ctx := log.WithField("app", app.ID)
+	ctx.Info("applying configuration defaults")
 
 	// Set every uri extract to true by default
 	if app.Fetch != nil {
@@ -86,22 +89,22 @@ func (p *Plugin) Exec() error {
 	}
 
 	// Set faster default healthcheck timing configuration to avoid long rollbacks
-	for _, h := range *app.HealthChecks {
-		if h.GracePeriodSeconds == 0 {
-			h.GracePeriodSeconds = 60
-		}
-		if h.IntervalSeconds == 0 {
-			h.IntervalSeconds = 15
-		}
-		if h.TimeoutSeconds == 0 {
-			h.TimeoutSeconds = 10
+	if app.HealthChecks != nil {
+		for _, h := range *app.HealthChecks {
+			if h.GracePeriodSeconds == 0 {
+				h.GracePeriodSeconds = 60
+			}
+			if h.IntervalSeconds == 0 {
+				h.IntervalSeconds = 15
+			}
+			if h.TimeoutSeconds == 0 {
+				h.TimeoutSeconds = 10
+			}
 		}
 	}
 
 	app.Container.Docker.AddParameter("log-driver", "json-file")
 	app.Container.Docker.AddParameter("log-opt", "max-size=512m")
-
-	ctx := log.WithField("app", app.ID)
 
 	var prevVersion *marathon.ApplicationVersion
 
