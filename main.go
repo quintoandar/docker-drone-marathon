@@ -43,6 +43,11 @@ func main() {
 			Usage:  "if true will attempt to rollback failed deployments",
 			EnvVar: "PLUGIN_ROLLBACK",
 		},
+		cli.BoolFlag{
+			Name:   "debug",
+			Usage:  "if true will print debug logs",
+			EnvVar: "PLUGIN_DEBUG",
+		},
 	}
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
@@ -66,6 +71,7 @@ func run(c *cli.Context) error {
 		AppConfig:    c.String("app_config"),
 		Timeout:      time.Duration(timeout) * time.Minute,
 		Rollback:     c.BoolT("rollback"),
+		Debug:        c.Bool("debug"),
 	}
 
 	return plugin.Exec()

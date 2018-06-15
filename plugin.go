@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ type Plugin struct {
 	AppConfig    string
 	Timeout      time.Duration
 	Rollback     bool
+	Debug        bool
 }
 
 // Exec runs the plugin
@@ -32,6 +34,7 @@ func (p *Plugin) Exec() error {
 		"marathonfile": p.Marathonfile,
 		"timeout":      p.Timeout,
 		"rollback":     p.Rollback,
+		"debug":        p.Debug,
 	}).Info("attempting to start job")
 
 	data, err := p.ReadInput()
@@ -56,6 +59,10 @@ func (p *Plugin) Exec() error {
 
 	config := marathon.NewDefaultConfig()
 	config.URL = p.Server
+
+	if p.Debug == true {
+		config.LogOutput = os.Stdout
+	}
 
 	client, err := marathon.NewClient(config)
 

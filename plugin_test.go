@@ -65,6 +65,7 @@ func deploy(t *testing.T, app string) {
 		Marathonfile: "",
 		AppConfig:    app,
 		Rollback:     false,
+		Debug:        true,
 		Timeout:      time.Duration(5) * time.Minute,
 	}
 
@@ -118,6 +119,7 @@ func TestAppFailedDeploy(t *testing.T) {
 		Marathonfile: "",
 		AppConfig:    app,
 		Rollback:     true,
+		Debug:        true,
 		Timeout:      time.Duration(5) * time.Minute,
 	}
 
@@ -169,6 +171,7 @@ func TestAppFailedDeployAndRollback(t *testing.T) {
 		Marathonfile: "",
 		AppConfig:    app,
 		Rollback:     true,
+		Debug:        true,
 		Timeout:      time.Duration(5) * time.Minute,
 	}
 
